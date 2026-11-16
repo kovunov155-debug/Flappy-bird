@@ -1,527 +1,121 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Gift, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react';
-import { AndroidExportModal } from './components/AndroidExportModal';
-import { GameCanvas } from './components/GameCanvas';
-import { IdleBayView } from './components/IdleBayView';
-import { RewardedAdModal } from './components/RewardedAdModal';
-import { ShopView } from './components/ShopView';
-import { SkinsView } from './components/SkinsView';
-import {
-  ActiveTab,
-  CAT_SKINS,
-  CatSkin,
-  GameStatus,
-  getTotalCoinsPerSec,
-  IdleGeneratorDef,
-  INITIAL_SAVE_STATE,
-  SaveState,
-} from './types/game';
-import { soundEngine } from './utils/sound';
+import { useEffect, useState } from 'react';
+import { Gift, X } from 'lucide-react';
 
-const STORAGE_KEY = 'cyber_cat_flyer_save_v1';
-
-function loadInitialSave(): { save: SaveState; offlineEarned: number } {
-  if (typeof window === 'undefined') {
-    return { save: INITIAL_SAVE_STATE, offlineEarned: 0 };
-  }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { save: INITIAL_SAVE_STATE, offlineEarned: 0 };
-    const parsed = JSON.parse(raw) as Partial<SaveState>;
-    const merged: SaveState = {
-      ...INITIAL_SAVE_STATE,
-      ...parsed,
-      idleCounts: {
-        ...INITIAL_SAVE_STATE.idleCounts,
-        ...(parsed.idleCounts ?? {}),
-      },
-      unlockedSkins:
-        Array.isArray(parsed.unlockedSkins) && parsed.unlockedSkins.length > 0
-          ? parsed.unlockedSkins
-          : ['astro'],
-    };
-
-    const rate = getTotalCoinsPerSec(merged.idleCounts);
-    const elapsedSec = Math.max(
-      0,
-      Math.min(7200, Math.floor((Date.now() - (merged.lastSavedAt || Date.now())) / 1000))
-    );
-    const offlineEarned = elapsedSec >= 3 && rate > 0 ? elapsedSec * rate : 0;
-    merged.idleVault = (merged.idleVault || 0) + offlineEarned;
-    merged.lastSavedAt = Date.now();
-    return { save: merged, offlineEarned };
-  } catch {
-    return { save: INITIAL_SAVE_STATE, offlineEarned: 0 };
-  }
+interface RewardedAdModalProps {
+  open: boolean;
+  rewardAmount: number;
+  title: string;
+  onClose: () => void;
+  onRewardClaimed: (amount: number) => void;
 }
 
-export default function App() {
-  const initialRef = useRef<{ save: SaveState; offlineEarned: number } | null>(null);
-  if (!initialRef.current) {
-    initialRef.current = loadInitialSave();
-  }
-
-  const [saveState, setSaveState] = useState<SaveState>(initialRef.current.save);
-  const [offlineNotice, setOfflineNotice] = useState<number>(initialRef.current.offlineEarned);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('play');
-  const [gameStatus, setGameStatus] = useState<GameStatus>('menu');
-
-  const [hud, setHud] = useState({
-    score: 0,
-    runCoins: 0,
-    speedMult: 1,
-    shieldRemainingSec: 0,
-    magnetRemainingSec: 0,
-  });
-
-  const [lastRun, setLastRun] = useState({
-    score: 0,
-    earnedCoins: 0,
-    obstaclesCleared: 0,
-    isNewRecord: false,
-    doubledAdUsed: false,
-  });
-
-  const [adModal, setAdModal] = useState<{
-    open: boolean;
-    amount: number;
-    title: string;
-    source: 'shop' | 'gameover';
-  }>({
-    open: false,
-    amount: 150,
-    title: 'Бонусный контейнер спонсора',
-    source: 'shop',
-  });
-
-  const [androidModalOpen, setAndroidModalOpen] = useState(false);
+export function RewardedAdModal({
+  open,
+  rewardAmount,
+  title,
+  onClose,
+  onRewardClaimed,
+}: RewardedAdModalProps) {
+  const [secondsLeft, setSecondsLeft] = useState(5);
 
   useEffect(() => {
-    soundEngine.setEnabled(saveState.soundEnabled);
-  }, [saveState.soundEnabled]);
+    if (!open) return;
+    setSecondsLeft(5);
 
-  useEffect(() => {
-    try {
-      const toStore: SaveState = { ...saveState, lastSavedAt: Date.now() };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, [saveState]);
-
-  const idleRate = getTotalCoinsPerSec(saveState.idleCounts);
-  useEffect(() => {
-    if (idleRate <= 0) return;
     const timer = window.setInterval(() => {
-      setSaveState((prev) => ({
-        ...prev,
-        idleVault: prev.idleVault + getTotalCoinsPerSec(prev.idleCounts),
-        lastSavedAt: Date.now(),
-      }));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [idleRate]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (activeTab !== 'play') return;
-      if (e.code === 'KeyP' || e.code === 'Escape') {
-        setGameStatus((prev) => {
-          if (prev === 'playing') return 'paused';
-          if (prev === 'paused') return 'playing';
-          return prev;
-        });
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [activeTab]);
-
-  const handleSwitchTab = (tab: ActiveTab) => {
-    if (tab !== 'play' && gameStatus === 'playing') {
-      setGameStatus('paused');
-    }
-    setActiveTab(tab);
-  };
-
-  const handleStartFlight = useCallback(() => {
-    setActiveTab('play');
-    setGameStatus('playing');
-  }, []);
-
-  const handleGameOver = useCallback(
-    (finalScore: number, earnedCoins: number, obstaclesCleared: number) => {
-      setSaveState((prev) => {
-        const isRecord = finalScore > prev.highScore;
-        setLastRun({
-          score: finalScore,
-          earnedCoins,
-          obstaclesCleared,
-          isNewRecord: isRecord,
-          doubledAdUsed: false,
-        });
-        return {
-          ...prev,
-          coins: prev.coins + earnedCoins,
-          highScore: Math.max(prev.highScore, finalScore),
-          totalFlights: prev.totalFlights + 1,
-        };
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
       });
-      setGameStatus('gameover');
-    },
-    []
-  );
+    }, 1000);
 
-  const handleBuyUpgrade = (
-    key: 'flapPower' | 'gravityRed' | 'coinValue' | 'shieldLevel' | 'magnetLevel',
-    cost: number
-  ) => {
-    setSaveState((prev) => {
-      if (prev.coins < cost) return prev;
-      soundEngine.playUpgrade();
-      return {
-        ...prev,
-        coins: prev.coins - cost,
-        [key]: prev[key] + 1,
-      };
-    });
-  };
+    return () => window.clearInterval(timer);
+  }, [open]);
 
-  const handleUnlockOrEquipSkin = (skin: CatSkin) => {
-    setSaveState((prev) => {
-      const owned = prev.unlockedSkins.includes(skin.id);
-      if (owned) {
-        soundEngine.playPassGate();
-        return { ...prev, equippedSkin: skin.id };
-      }
-      if (prev.coins < skin.price) return prev;
-      soundEngine.playUpgrade();
-      return {
-        ...prev,
-        coins: prev.coins - skin.price,
-        unlockedSkins: [...prev.unlockedSkins, skin.id],
-        equippedSkin: skin.id,
-      };
-    });
-  };
+  if (!open) return null;
 
-  const handleBuyIdleGenerator = (gen: IdleGeneratorDef, cost: number) => {
-    setSaveState((prev) => {
-      if (prev.coins < cost) return prev;
-      soundEngine.playUpgrade();
-      return {
-        ...prev,
-        coins: prev.coins - cost,
-        idleCounts: {
-          ...prev.idleCounts,
-          [gen.id]: (prev.idleCounts[gen.id] ?? 0) + 1,
-        },
-      };
-    });
-  };
-
-  const handleClaimVault = () => {
-    setSaveState((prev) => {
-      const amt = Math.floor(prev.idleVault);
-      if (amt < 1) return prev;
-      soundEngine.playPowerup();
-      setOfflineNotice(0);
-      return {
-        ...prev,
-        coins: prev.coins + amt,
-        idleVault: prev.idleVault - amt,
-      };
-    });
-  };
-
-  const handleRewardedAdClaimed = (amount: number) => {
-    soundEngine.playPowerup();
-    setSaveState((prev) => ({
-      ...prev,
-      coins: prev.coins + amount,
-    }));
-    if (adModal.source === 'gameover') {
-      setLastRun((prev) => ({ ...prev, doubledAdUsed: true }));
-    }
-    setAdModal((prev) => ({ ...prev, open: false }));
-  };
-
-  const equippedSkinObj =
-    CAT_SKINS.find((k) => k.id === saveState.equippedSkin) ?? CAT_SKINS[0];
-  const vaultCoins = Math.floor(saveState.idleVault);
+  const ready = secondsLeft === 0;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0B1120] text-slate-100">
-      <header className="border-b border-slate-800/90 bg-[#0B1120]/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-8 px-4 sm:px-6 py-3.5">
-          <a
-            href="#top"
-            onClick={(e) => {
-              e.preventDefault();
-              handleSwitchTab('play');
-            }}
-            className="font-display text-lg sm:text-xl font-bold tracking-tight text-slate-50 whitespace-nowrap shrink-0"
-          >
-            Cyber Cat Flyer
-          </a>
-
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-            <button
-              type="button"
-              onClick={() => handleSwitchTab('play')}
-              className={`pb-0.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer border-b-2 ${
-                activeTab === 'play'
-                  ? 'border-sky-400 text-slate-50'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Полёт
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSwitchTab('shop')}
-              className={`pb-0.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer border-b-2 ${
-                activeTab === 'shop'
-                  ? 'border-sky-400 text-slate-50'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Апгрейды
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSwitchTab('skins')}
-              className={`pb-0.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer border-b-2 ${
-                activeTab === 'skins'
-                  ? 'border-sky-400 text-slate-50'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Скины
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSwitchTab('idle')}
-              className={`pb-0.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer border-b-2 ${
-                activeTab === 'idle'
-                  ? 'border-sky-400 text-slate-50'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Idle-станция
-            </button>
-            <button
-              type="button"
-              onClick={() => setAndroidModalOpen(true)}
-              className="pb-0.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Код Android
-            </button>
-          </nav>
-
-          <div className="shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab !== 'play') {
-                  handleStartFlight();
-                } else if (gameStatus === 'playing') {
-                  setGameStatus('paused');
-                } else {
-                  handleStartFlight();
-                }
-              }}
-              className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 transition-colors hover:bg-sky-400 whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              {activeTab === 'play' && gameStatus === 'playing' ? (
-                <>
-                  <Pause className="h-4 w-4" />
-                  Пауза
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Начать полёт
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 sm:px-6 py-6 sm:py-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300 font-mono tabular-nums">
-            <span>
-              Монеты:{' '}
-              <strong className="text-amber-400 font-semibold">
-                {saveState.coins.toLocaleString('ru-RU')}
-              </strong>
-            </span>
-            <span className="text-slate-600" aria-hidden="true">·</span>
-            <span>
-              Рекорд:{' '}
-              <strong className="text-slate-100 font-semibold">
-                {saveState.highScore.toLocaleString('ru-RU')}
-              </strong>
-            </span>
-            <span className="text-slate-600" aria-hidden="true">·</span>
-            <span>
-              Idle:{' '}
-              <strong className="text-sky-400 font-semibold">
-                +{idleRate}/сек
-              </strong>
-            </span>
-            {vaultCoins > 0 && (
-              <>
-                <span className="text-slate-600" aria-hidden="true">·</span>
-                <button
-                  type="button"
-                  onClick={handleClaimVault}
-                  className="text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-4 cursor-pointer whitespace-nowrap"
-                >
-                  Забрать +{vaultCoins.toLocaleString('ru-RU')} из хранилища
-                </button>
-              </>
-            )}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rewarded-ad-title"
+    >
+      <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+              <Gift className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 id="rewarded-ad-title" className="text-lg font-semibold text-slate-100">
+                {title}
+              </h3>
+              <p className="text-xs text-slate-400">
+                Веб-симуляция AdMob Rewarded Video
+              </p>
+            </div>
           </div>
 
           <button
             type="button"
-            onClick={() =>
-              setSaveState((prev) => ({
-                ...prev,
-                soundEnabled: !prev.soundEnabled,
-              }))
-            }
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
           >
-            {saveState.soundEnabled ? (
-              <>
-                <Volume2 className="h-3.5 w-3.5 text-sky-400" />
-                Звук вкл.
-              </>
-            ) : (
-              <>
-                <VolumeX className="h-3.5 w-3.5 text-slate-500" />
-                Без звука
-              </>
-            )}
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {activeTab === 'play' && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-              <div className="flex flex-wrap items-center gap-5 font-mono tabular-nums text-sm">
-                <div>
-                  <span className="text-slate-400">Счёт: </span>
-                  <span className="font-bold text-slate-50 text-base">
-                    {hud.score.toLocaleString('ru-RU')}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">За вылет: </span>
-                  <span className="font-bold text-amber-400 text-base">
-                    +{hud.runCoins.toLocaleString('ru-RU')}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Скорость: </span>
-                  <span className="font-semibold text-sky-400">
-                    {hud.speedMult.toFixed(1)}×
-                  </span>
-                </div>
-              </div>
+        <div className="mt-5 rounded-lg border border-slate-800 bg-[#070D19] p-5 text-center">
+          <p className="text-sm text-slate-300">
+            Награда после завершения промо-блока:
+          </p>
+          <p className="mt-2 text-2xl font-bold font-mono text-amber-400 tabular-nums">
+            +{rewardAmount.toLocaleString('ru-RU')} монет
+          </p>
 
-              <div className="flex items-center gap-4 text-xs font-mono tabular-nums">
-                <span className={hud.shieldRemainingSec > 0 ? 'text-sky-400 font-semibold' : 'text-slate-500'}>
-                  Щит: {hud.shieldRemainingSec > 0 ? `${hud.shieldRemainingSec} сек` : 'нет'}
-                </span>
-                <span className="text-slate-700" aria-hidden="true">·</span>
-                <span className={hud.magnetRemainingSec > 0 ? 'text-amber-400 font-semibold' : 'text-slate-500'}>
-                  Магнит: {hud.magnetRemainingSec > 0 ? `${hud.magnetRemainingSec} сек` : 'нет'}
-                </span>
-              </div>
-            </div>
+          <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-800">
+            <div
+              className="h-full bg-sky-500 transition-all duration-700"
+              style={{ width: `${((5 - secondsLeft) / 5) * 100}%` }}
+            />
+          </div>
 
-            <div className="relative">
-              <GameCanvas
-                status={gameStatus}
-                saveState={saveState}
-                onHudUpdate={setHud}
-                onGameOver={handleGameOver}
-                onRequestStart={handleStartFlight}
-              />
+          <p className="mt-3 text-xs font-mono text-slate-400 tabular-nums">
+            {ready
+              ? 'Награда разблокирована'
+              : `Осталось ${secondsLeft} сек до получения награды`}
+          </p>
+        </div>
 
-              {gameStatus === 'menu' && (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-                  <div className="pointer-events-auto w-full max-w-md rounded-xl border border-slate-700/80 bg-slate-900/90 p-6 sm:p-7 text-center shadow-2xl backdrop-blur-md">
-                    <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-50">
-                      Cyber Cat Flyer
-                    </h1>
-                    <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-                      Управляйте реактивным котом между лазерными пилонами, пульсирующими воротами и патрульными дронами.
-                    </p>
-                    <p className="mt-2 text-xs text-slate-400">
-                      Управление: клик, касание, <span className="font-mono text-slate-200">Space</span> или{' '}
-                      <span className="font-mono text-slate-200">↑</span> · Пауза: <span className="font-mono text-slate-200">P</span>
-                    </p>
-
-                    <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-                      <button
-                        type="button"
-                        onClick={handleStartFlight}
-                        className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-6 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-sky-400 cursor-pointer whitespace-nowrap"
-                      >
-                        <Play className="h-4 w-4" />
-                        Взлететь
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSwitchTab('shop')}
-                        className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700 cursor-pointer whitespace-nowrap"
-                      >
-                        Апгрейды
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {gameStatus === 'paused' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm rounded-xl">
-                  <div className="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
-                    <h2 className="text-2xl font-bold text-slate-50">Полёт на паузе</h2>
-                    <p className="mt-1.5 text-sm text-slate-400 font-mono tabular-nums">
-                      Текущий счёт: {hud.score.toLocaleString('ru-RU')}
-                    </p>
-                    <div className="mt-5 flex flex-col gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => setGameStatus('playing')}
-                        className="w-full rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 cursor-pointer"
-                      >
-                        Продолжить полёт
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGameStatus('menu')}
-                        className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-700 cursor-pointer"
-                      >
-                        Выйти в меню
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {gameStatus === 'gameover' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm rounded-xl">
-                  <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 sm:p-7 text-center shadow-2xl">
-                    <h2 className="text-2xl sm:text-3xl font-bold text-rose-400">
-                      Полёт завершён
-                    </h2>
-                    {lastRun.isNewRecord && (
-                      <p className="mt-1 text-xs font-semibold text-emerald-400">
-              
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 cursor-pointer whitespace-nowrap"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={() => onRewardClaimed(rewardAmount)}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+              ready
+                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 cursor-pointer'
+                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            Забрать +{rewardAmount}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
