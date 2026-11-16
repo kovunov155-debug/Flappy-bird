@@ -1,561 +1,393 @@
-<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Cyber Cat Flyer</title>
-  <style>
-    :root {
-      --bg: #0b1120;
-      --panel: #111827;
-      --card: #172033;
-      --border: #1e293b;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
-      --sky: #0ea5e9;
-      --amber: #f59e0b;
-      --emerald: #10b981;
-      --rose: #f43f5e;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
-    header {
-      border-bottom: 1px solid var(--border);
-      background: rgba(11, 17, 32, 0.96);
-      position: sticky;
-      top: 0;
-      z-index: 20;
-    }
-    .header-inner {
-      max-width: 1040px;
-      margin: 0 auto;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .brand { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: #f8fafc; white-space: nowrap; }
-    .nav { display: flex; gap: 6px; overflow-x: auto; }
-    .nav-btn {
-      background: transparent;
-      border: none;
-      border-bottom: 2px solid transparent;
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 600;
-      padding: 6px 10px;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .nav-btn.active { color: #f8fafc; border-bottom-color: var(--sky); }
-    .btn {
-      border: none;
-      border-radius: 8px;
-      padding: 9px 15px;
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: opacity 0.15s, transform 0.1s;
-    }
-    .btn:active { transform: scale(0.98); }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn-sky { background: var(--sky); color: #082f49; }
-    .btn-amber { background: var(--amber); color: #451a03; }
-    .btn-emerald { background: var(--emerald); color: #022c22; }
-    .btn-dark { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; }
-    main {
-      max-width: 1040px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 16px;
-      flex: 1;
-    }
-    .economy-bar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding-bottom: 12px;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-      font-size: 14px;
-    }
-    .stats-line { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; color: #cbd5e1; }
-    .hud-bar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 14px;
-      margin-bottom: 12px;
-      font-size: 14px;
-    }
-    .arena-wrap {
-      position: relative;
-      width: 100%;
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      background: #070d19;
-      touch-action: manipulation;
-      user-select: none;
-    }
-    canvas#gameCanvas {
-      display: block;
-      width: 100%;
-      height: auto;
-      aspect-ratio: 900 / 520;
-      cursor: pointer;
-    }
-    @media (max-width: 640px) {
-      canvas#gameCanvas { aspect-ratio: 900 / 700; }
-    }
-    .overlay {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-      background: rgba(7, 13, 25, 0.72);
-      backdrop-filter: blur(4px);
-    }
-    .overlay.hidden { display: none; }
-    .overlay-card {
-      width: 100%;
-      max-width: 390px;
-      background: rgba(15, 23, 42, 0.96);
-      border: 1px solid #334155;
-      border-radius: 14px;
-      padding: 22px;
-      text-align: center;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-    }
-    .overlay-card h1, .overlay-card h2 { font-size: 24px; margin-bottom: 8px; }
-    .overlay-card p { font-size: 14px; color: var(--muted); line-height: 1.5; }
-    .overlay-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
-    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .score-box {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-top: 14px;
-      padding: 12px;
-      border-radius: 10px;
-      background: #070d19;
-      border: 1px solid var(--border);
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 14px;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 14px;
-    }
-    .card h3 { font-size: 16px; color: #f8fafc; }
-    .card-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
-    .card-desc { font-size: 13px; color: #cbd5e1; line-height: 1.45; margin-top: 10px; }
-    .card-foot {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding-top: 12px;
-      border-top: 1px solid var(--border);
-    }
-    .section-head {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .section-head h2 { font-size: 22px; }
-    .hidden { display: none !important; }
-    .claim-link {
-      background: none;
-      border: none;
-      color: var(--emerald);
-      font-weight: 700;
-      text-decoration: underline;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    .skin-swatch {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      border: 2px solid #334155;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 18px;
-    }
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 50;
-      background: rgba(2, 6, 23, 0.82);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-    }
-    .progress-track {
-      height: 8px;
-      width: 100%;
-      background: #1e293b;
-      border-radius: 999px;
-      overflow: hidden;
-      margin-top: 12px;
-    }
-    .progress-fill {
-      height: 100%;
-      background: var(--sky);
-      width: 0%;
-      transition: width 0.4s ease;
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="header-inner">
-      <div class="brand">Cyber Cat Flyer</div>
-      <nav class="nav">
-        <button class="nav-btn active" data-tab="play">Полёт</button>
-        <button class="nav-btn" data-tab="shop">Апгрейды</button>
-        <button class="nav-btn" data-tab="skins">Скины</button>
-        <button class="nav-btn" data-tab="idle">Idle-станция</button>
-      </nav>
-      <button id="topActionBtn" class="btn btn-sky">Начать полёт</button>
-    </div>
-  </header>
+package com.example.cybercatflyer.ui
 
-  <main>
-    <div class="economy-bar">
-      <div class="stats-line mono">
-        <span>Монеты: <strong id="totalCoinsEl" style="color:#fbbf24">0</strong></span>
-        <span>·</span>
-        <span>Рекорд: <strong id="highScoreEl">0</strong></span>
-        <span>·</span>
-        <span>Idle: <strong id="idleRateEl" style="color:#38bdf8">+0/сек</strong></span>
-        <button id="quickClaimBtn" class="claim-link hidden">Забрать +0</button>
-      </div>
-      <button id="soundToggleBtn" class="btn btn-dark" style="padding:6px 12px;font-size:12px;">Звук вкл.</button>
-    </div>
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.cybercatflyer.audio.SoundEffects
+import com.example.cybercatflyer.model.CatSkin
+import com.example.cybercatflyer.model.PlayerProgress
+import kotlinx.coroutines.delay
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
+import kotlin.random.Random
 
-    <!-- PLAY TAB -->
-    <section id="tab-play">
-      <div class="hud-bar mono">
-        <div style="display:flex;gap:16px;flex-wrap:wrap;">
-          <span>Счёт: <strong id="hudScore">0</strong></span>
-          <span>За вылет: <strong id="hudRunCoins" style="color:#fbbf24">+0</strong></span>
-          <span>Скорость: <strong id="hudSpeed" style="color:#38bdf8">1.0×</strong></span>
-        </div>
-        <div style="display:flex;gap:12px;font-size:12px;">
-          <span id="hudShield" style="color:#64748b">Щит: нет</span>
-          <span id="hudMagnet" style="color:#64748b">Магнит: нет</span>
-        </div>
-      </div>
+private enum class ObstacleKind { STATIC, OSCILLATING, PULSING, DRONE }
+private enum class PickupKind { COIN, GEM, SHIELD, MAGNET }
 
-      <div class="arena-wrap" id="arenaWrap">
-        <canvas id="gameCanvas" width="900" height="520"></canvas>
+private data class GateObstacle(
+    var x: Float,
+    val width: Float,
+    var gapY: Float,
+    val baseY: Float,
+    var gapSize: Float,
+    val baseSize: Float,
+    val kind: ObstacleKind,
+    val phase: Float,
+    var droneY: Float,
+    var passed: Boolean = false
+)
 
-        <div id="overlayMenu" class="overlay">
-          <div class="overlay-card">
-            <h1>Cyber Cat Flyer</h1>
-            <p>Летите между лазерными пилонами, пульсирующими воротами и патрульными дронами. Нажимайте на экран или Space для тяги.</p>
-            <div class="overlay-actions">
-              <button id="startBtn" class="btn btn-sky">Взлететь</button>
-              <button id="goShopBtn" class="btn btn-dark">Магазин апгрейдов</button>
-            </div>
-          </div>
-        </div>
+private data class SpacePickup(
+    var x: Float,
+    var y: Float,
+    val kind: PickupKind,
+    var phase: Float,
+    var collected: Boolean = false
+)
 
-        <div id="overlayPaused" class="overlay hidden">
-          <div class="overlay-card">
-            <h2>Пауза</h2>
-            <p class="mono" id="pauseScoreText">Счёт: 0</p>
-            <div class="overlay-actions">
-              <button id="resumeBtn" class="btn btn-sky">Продолжить</button>
-              <button id="exitMenuBtn" class="btn btn-dark">В меню</button>
-            </div>
-          </div>
-        </div>
+private data class Star(var x: Float, var y: Float, val r: Float, val speed: Float)
 
-        <div id="overlayGameOver" class="overlay hidden">
-          <div class="overlay-card">
-            <h2 style="color:#fb7185">Полёт завершён</h2>
-            <p id="newRecordMsg" class="hidden" style="color:#34d399;font-weight:700;">Новый рекорд!</p>
-            <div class="score-box mono">
-              <div><div style="font-size:11px;color:#94a3b8">Счёт</div><strong id="overScore">0</strong></div>
-              <div><div style="font-size:11px;color:#94a3b8">Монеты</div><strong id="overCoins" style="color:#fbbf24">+0</strong></div>
-              <div><div style="font-size:11px;color:#94a3b8">Ворота</div><strong id="overGates" style="color:#38bdf8">0</strong></div>
-            </div>
-            <div class="overlay-actions">
-              <button id="restartBtn" class="btn btn-sky">Повторить</button>
-              <button id="doubleAdBtn" class="btn btn-amber">Бонус за рекламу</button>
-              <div class="row-2">
-                <button id="overShopBtn" class="btn btn-dark">Апгрейды</button>
-                <button id="overMenuBtn" class="btn btn-dark">В меню</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+@Composable
+fun GameScreen(
+    progress: PlayerProgress,
+    sound: SoundEffects,
+    onGameOver: (score: Int, earned: Int) -> Unit
+) {
+    var canvasSize by remember { mutableStateOf(IntSize(900, 1400)) }
+    var score by remember { mutableIntStateOf(0) }
+    var runCoins by remember { mutableIntStateOf(0) }
+    var shieldSec by remember { mutableIntStateOf(if (progress.equippedSkin == CatSkin.LYNX) 4 else 0) }
+    var magnetSec by remember { mutableIntStateOf(0) }
 
-    <!-- SHOP TAB -->
-    <section id="tab-shop" class="hidden">
-      <div class="section-head">
-        <div>
-          <h2>Ангар апгрейдов</h2>
-          <p class="card-sub">Улучшайте физику полёта и доходность монет</p>
-        </div>
-        <button id="shopAdBtn" class="btn btn-amber">Бонус за рекламу (+150)</button>
-      </div>
-      <div id="shopGrid" class="grid"></div>
-    </section>
-
-    <!-- SKINS TAB -->
-    <section id="tab-skins" class="hidden">
-      <div class="section-head">
-        <div>
-          <h2>Скины кибер-котов</h2>
-          <p class="card-sub">Уникальный вид корпуса и пассивные бонусы</p>
-        </div>
-      </div>
-      <div id="skinsGrid" class="grid"></div>
-    </section>
-
-    <!-- IDLE TAB -->
-    <section id="tab-idle" class="hidden">
-      <div class="section-head">
-        <div>
-          <h2>Idle-станция добычи</h2>
-          <p class="card-sub">Автономные дроны приносят монеты каждую секунду и до 2 часов оффлайн</p>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;">
-          <span class="mono">Хранилище: <strong id="vaultAmountEl" style="color:#fbbf24">0</strong></span>
-          <button id="claimVaultBtn" class="btn btn-emerald">Забрать</button>
-        </div>
-      </div>
-      <div id="idleGrid" class="grid"></div>
-    </section>
-  </main>
-
-  <!-- REWARDED AD MODAL -->
-  <div id="adModal" class="modal-backdrop hidden">
-    <div class="overlay-card">
-      <h2 id="adModalTitle">Промо-контейнер</h2>
-      <p>Веб-симуляция награды за просмотр рекламы</p>
-      <div style="margin-top:14px;padding:16px;background:#070d19;border-radius:10px;border:1px solid #1e293b;">
-        <div class="mono" id="adRewardLabel" style="font-size:22px;font-weight:800;color:#fbbf24;">+150 монет</div>
-        <div class="progress-track"><div id="adProgressBar" class="progress-fill"></div></div>
-        <p id="adTimerText" class="mono" style="margin-top:10px;font-size:12px;">Осталось 5 сек</p>
-      </div>
-      <div class="row-2" style="margin-top:16px;">
-        <button id="adCancelBtn" class="btn btn-dark">Отмена</button>
-        <button id="adClaimBtn" class="btn btn-amber" disabled>Забрать</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    (function () {
-      const STORAGE_KEY = 'cyber_cat_flyer_gh_v1';
-      const SKINS = [
-        { id: 'astro', name: 'Astro Cat', sub: 'Базовый корпус', price: 0, body: '#0EA5E9', accent: '#E0F2FE', trail: '#38BDF8', bonus: 'Стандартный' },
-        { id: 'solar', name: 'Solar Tabby', sub: 'Золотая броня', price: 150, body: '#F59E0B', accent: '#FEF3C7', trail: '#FBBF24', bonus: '+10% радиус подбора' },
-        { id: 'stealth', name: 'Phantom Stealth', sub: 'Угловые уши', price: 350, body: '#10B981', accent: '#A7F3D0', trail: '#34D399', bonus: 'Щит +1 сек' },
-        { id: 'mecha', name: 'Mecha Neko-09', sub: 'Антенны связи', price: 600, body: '#F43F5E', accent: '#FFE4E6', trail: '#FB7185', bonus: '+1 монета за токен' },
-        { id: 'lynx', name: 'Void Lynx', sub: 'Плазменный корпус', price: 1000, body: '#818CF8', accent: '#E0E7FF', trail: '#A78BFA', bonus: 'Щит на старте 4 сек' }
-      ];
-      const IDLE_DEFS = [
-        { id: 'scout', name: 'Дрон-сборщик MK-I', desc: 'Собирает микро-кредиты на орбите.', base: 40, mult: 1.18, rate: 1 },
-        { id: 'relay', name: 'Орбитальный ретранслятор', desc: 'Спутниковая сеть доставки монет.', base: 220, mult: 1.20, rate: 5 },
-        { id: 'reactor', name: 'Квантовый реактор', desc: 'Синтезирует кристаллы из энергии полётов.', base: 1100, mult: 1.22, rate: 22 },
-        { id: 'harvester', name: 'Сборщик туманности', desc: 'Добыча редких монет в глубоком космосе.', base: 5200, mult: 1.25, rate: 95 }
-      ];
-
-      const defaultState = {
-        coins: 0,
-        highScore: 0,
-        flapPower: 1,
-        gravityRed: 0,
-        coinValue: 1,
-        shieldLevel: 1,
-        magnetLevel: 0,
-        equippedSkin: 'astro',
-        unlockedSkins: ['astro'],
-        idleCounts: { scout: 0, relay: 0, reactor: 0, harvester: 0 },
-        idleVault: 0,
-        lastSavedAt: Date.now(),
-        soundEnabled: true
-      };
-
-      function loadState() {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (!raw) return structuredClone(defaultState);
-          const p = JSON.parse(raw);
-          const s = Object.assign(structuredClone(defaultState), p);
-          s.idleCounts = Object.assign({}, defaultState.idleCounts, p.idleCounts || {});
-          if (!Array.isArray(s.unlockedSkins) || s.unlockedSkins.length === 0) s.unlockedSkins = ['astro'];
-          const rate = getIdleRate(s);
-          const elapsed = Math.max(0, Math.min(7200, Math.floor((Date.now() - (s.lastSavedAt || Date.now())) / 1000)));
-          if (elapsed >= 3 && rate > 0) s.idleVault += elapsed * rate;
-          s.lastSavedAt = Date.now();
-          return s;
-        } catch {
-          return structuredClone(defaultState);
+    val skin = progress.equippedSkin
+    val stars = remember {
+        List(50) {
+            Star(Random.nextFloat() * 1000f, Random.nextFloat() * 1600f, Random.nextFloat() * 2f + 1f, Random.nextFloat() * 1.2f + 0.4f)
         }
-      }
+    }
 
-      function saveState() {
-        try {
-          state.lastSavedAt = Date.now();
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        } catch {}
-      }
+    var playerY by remember { mutableFloatStateOf(480f) }
+    var velocity by remember { mutableFloatStateOf(-6f) }
+    var frame by remember { mutableFloatStateOf(0f) }
+    var shieldFrames by remember { mutableFloatStateOf(if (skin == CatSkin.LYNX) 240f else 0f) }
+    var magnetFrames by remember { mutableFloatStateOf(0f) }
+    var speed by remember { mutableFloatStateOf(6.2f) }
 
-      function getIdleRate(s) {
-        return IDLE_DEFS.reduce((sum, d) => sum + (s.idleCounts[d.id] || 0) * d.rate, 0);
-      }
+    val obstacles = remember { mutableStateListOf<GateObstacle>() }
+    val pickups = remember { mutableStateListOf<SpacePickup>() }
 
-      function getIdleCost(d, owned) {
-        return Math.floor(d.base * Math.pow(d.mult, owned));
-      }
+    LaunchedEffect(canvasSize) {
+        if (canvasSize.width <= 0 || canvasSize.height <= 0) return@LaunchedEffect
+        val w = canvasSize.width.toFloat()
+        val h = canvasSize.height.toFloat()
+        val playerX = w * 0.24f
+        val playerR = (w * 0.042f).coerceIn(22f, 38f)
+        playerY = h * 0.45f
+        var spawnTimer = 50f
+        var pickupTimer = 30f
+        var rawScore = 0f
 
-      let state = loadState();
-      let activeTab = 'play';
-      let gameStatus = 'menu'; // menu | playing | paused | gameover
-      let lastEarned = 0;
-      let doubledUsed = false;
+        while (true) {
+            delay(16L)
+            frame += 1f
 
-      // Audio
-      let audioCtx = null;
-      function tone(freqStart, freqEnd, dur, type, vol) {
-        if (!state.soundEnabled) return;
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        if (!audioCtx) audioCtx = new AC();
-        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-        const now = audioCtx.currentTime;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type || 'sine';
-        osc.frequency.setValueAtTime(freqStart, now);
-        if (freqEnd !== freqStart) osc.frequency.exponentialRampToValueAtTime(freqEnd, now + dur);
-        gain.gain.setValueAtTime(vol || 0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(now);
-        osc.stop(now + dur);
-      }
+            val gravity = (0.52f - progress.gravityReduction * 0.04f).coerceAtLeast(0.22f)
+            velocity = (velocity + gravity).coerceAtMost(16f)
+            playerY += velocity
 
-      // Canvas & Simulation
-      const canvas = document.getElementById('gameCanvas');
-      const ctx = canvas.getContext('2d');
-      let W = 900, H = 520;
-      function updateCanvasSize() {
-        const mobile = window.innerWidth <= 640;
-        W = 900;
-        H = mobile ? 700 : 520;
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = W * dpr;
-        canvas.height = H * dpr;
-      }
-      updateCanvasSize();
-      window.addEventListener('resize', updateCanvasSize);
+            if (playerY < playerR + 10f) {
+                playerY = playerR + 10f
+                if (velocity < 0f) velocity = 0f
+            }
 
-      const sim = {
-        px: 185, py: 260, pr: 20, vel: 0,
-        score: 0, runCoins: 0, cleared: 0,
-        frame: 0, spawnTimer: 60, pickupTimer: 35, speed: 4.3,
-        shieldFrames: 0, shieldMax: 240, magnetFrames: 0, shake: 0,
-        obstacles: [], pickups: [], particles: [],
-        stars: Array.from({ length: 60 }, () => ({
-          x: Math.random() * 900, y: Math.random() * 620,
-          r: Math.random() * 1.6 + 0.6, s: Math.random() * 0.6 + 0.2, a: Math.random() * 0.5 + 0.25
-        }))
-      };
+            if (playerY > h - playerR - 20f) {
+                if (shieldFrames > 0f) {
+                    shieldFrames = 0f
+                    playerY = h - playerR - 24f
+                    velocity = -11f
+                    sound.playShield()
+                } else {
+                    sound.playCrash()
+                    onGameOver(rawScore.toInt(), runCoins)
+                    return@LaunchedEffect
+                }
+            }
 
-      function getSkin() {
-        return SKINS.find(k => k.id === state.equippedSkin) || SKINS[0];
-      }
+            stars.forEach { st ->
+                st.x -= st.speed * (speed / 6.2f)
+                if (st.x < -5f) {
+                    st.x = w + 5f
+                    st.y = Random.nextFloat() * (h - 40f)
+                }
+            }
 
-      function startFlight() {
-        switchTab('play');
-        const skin = getSkin();
-        const startShield = skin.id === 'lynx' ? 4 : 0;
-        sim.py = H * 0.45;
-        sim.vel = -5.5;
-        sim.score = 0;
-        sim.runCoins = 0;
-        sim.cleared = 0;
-        sim.frame = 0;
-        sim.spawnTimer = 60;
-        sim.pickupTimer = 35;
-        sim.speed = 4.3;
-        sim.shieldFrames = startShield * 60;
-        sim.shieldMax = Math.max(240, (4 + state.shieldLevel * 1.2) * 60);
-        sim.magnetFrames = 0;
-        sim.shake = 0;
-        sim.obstacles = [];
-        sim.pickups = [];
-        sim.particles = [];
-        gameStatus = 'playing';
-        syncOverlays();
-      }
+            spawnTimer -= 1f
+            if (spawnTimer <= 0f) {
+                spawnTimer = (92f - speed * 3.5f).coerceAtLeast(52f)
+                val gapSize = (h * 0.30f - (rawScore / 40f)).coerceAtLeast(playerR * 5.2f)
+                val gapY = 70f + Random.nextFloat() * (h - gapSize - 140f).coerceAtLeast(40f)
+                val roll = Random.nextFloat()
+                val kind = when {
+                    rawScore > 120f && roll > 0.72f -> ObstacleKind.DRONE
+                    rawScore > 60f && roll > 0.48f -> ObstacleKind.PULSING
+                    roll > 0.24f -> ObstacleKind.OSCILLATING
+                    else -> ObstacleKind.STATIC
+                }
+                obstacles.add(
+                    GateObstacle(
+                        x = w + 60f,
+                        width = (w * 0.095f).coerceIn(64f, 100f),
+                        gapY = gapY,
+                        baseY = gapY,
+                        gapSize = gapSize,
+                        baseSize = gapSize,
+                        kind = kind,
+                        phase = Random.nextFloat() * 6.28f,
+                        droneY = gapY + gapSize * 0.5f
+                    )
+                )
+            }
 
-      function flap() {
-        if (gameStatus === 'menu') { startFlight(); return; }
-        if (gameStatus !== 'playing') return;
-        sim.vel = -7.2 - (state.flapPower - 1) * 0.65;
-        tone(220, 460, 0.09, 'triangle', 0.11);
-        const skin = getSkin();
-        for (let i = 0; i < 6; i++) {
-          sim.particles.push({
-            x: sim.px - 16, y: sim.py + 5,
-            vx: -2.5 - Math.random() * 2, vy: 1 + Math.random() * 2,
-            life: 18, max: 18, size: 3, color: skin.trail
-          });
+            pickupTimer -= 1f
+            if (pickupTimer <= 0f) {
+                pickupTimer = 42f + Random.nextFloat() * 28f
+                val r = Random.nextFloat()
+                val pk = when {
+                    r > 0.92f && shieldFrames <= 0f -> PickupKind.SHIELD
+                    r > 0.84f && magnetFrames <= 0f -> PickupKind.MAGNET
+                    r > 0.68f -> PickupKind.GEM
+                    else -> PickupKind.COIN
+                }
+                pickups.add(
+                    SpacePickup(
+                        x = w + 50f,
+                        y = 80f + Random.nextFloat() * (h - 160f).coerceAtLeast(40f),
+                        kind = pk,
+                        phase = Random.nextFloat() * 6.28f
+                    )
+                )
+            }
+
+            val obsIter = obstacles.iterator()
+            while (obsIter.hasNext()) {
+                val obs = obsIter.next()
+                obs.x -= speed
+                when (obs.kind) {
+                    ObstacleKind.OSCILLATING -> {
+                        obs.gapY = (obs.baseY + sin(frame * 0.045f + obs.phase) * 46f)
+                            .coerceIn(40f, (h - obs.gapSize - 40f).coerceAtLeast(40f))
+                    }
+                    ObstacleKind.PULSING -> {
+                        obs.gapSize = (obs.baseSize + sin(frame * 0.065f + obs.phase) * 32f)
+                            .coerceAtLeast(playerR * 4.5f)
+                        obs.gapY = obs.baseY + (obs.baseSize - obs.gapSize) * 0.5f
+                    }
+                    ObstacleKind.DRONE -> {
+                        obs.droneY = obs.gapY + obs.gapSize * 0.5f + sin(frame * 0.08f + obs.phase) * (obs.gapSize * 0.33f)
+                    }
+                    ObstacleKind.STATIC -> Unit
+                }
+
+                if (!obs.passed && obs.x + obs.width < playerX - playerR) {
+                    obs.passed = true
+                    rawScore += 15f
+                }
+
+                val hitX = playerX + playerR * 0.78f > obs.x && playerX - playerR * 0.78f < obs.x + obs.width
+                val hitWall = playerY - playerR * 0.78f < obs.gapY || playerY + playerR * 0.78f > obs.gapY + obs.gapSize
+                val hitDrone = obs.kind == ObstacleKind.DRONE &&
+                    hypot(playerX - (obs.x + obs.width * 0.5f), playerY - obs.droneY) < playerR * 0.8f + 18f
+
+                if ((hitX && hitWall) || hitDrone) {
+                    if (shieldFrames > 0f) {
+                        shieldFrames = 0f
+                        obs.x = -300f
+                        sound.playShield()
+                    } else {
+                        sound.playCrash()
+                        onGameOver(rawScore.toInt(), runCoins)
+                        return@LaunchedEffect
+                    }
+                }
+
+                if (obs.x + obs.width < -80f) obsIter.remove()
+            }
+
+            val magnetRadius = if (magnetFrames > 0f) 280f else if (skin == CatSkin.SOLAR) 70f else 0f
+            val collectRadius = playerR + if (skin == CatSkin.SOLAR) 26f else 18f
+
+            val pkIter = pickups.iterator()
+            while (pkIter.hasNext()) {
+                val pk = pkIter.next()
+                pk.x -= speed
+                pk.phase += 0.08f
+                val py = pk.y + sin(pk.phase) * 8f
+                val dx = playerX - pk.x
+                val dy = playerY - py
+                val dist = hypot(dx, dy)
+
+                if ((pk.kind == PickupKind.COIN || pk.kind == PickupKind.GEM) && magnetRadius > 0f && dist < magnetRadius && dist > 1f) {
+                    pk.x += (dx / dist) * 9.5f
+                    pk.y += (dy / dist) * 9.5f
+                }
+
+                if (!pk.collected && dist < collectRadius) {
+                    pk.collected = true
+                    val value = progress.coinValue + if (skin == CatSkin.MECHA) 1 else 0
+                    when (pk.kind) {
+                        PickupKind.COIN -> {
+                            runCoins += value
+                            rawScore += 10f * value
+                            sound.playCoin()
+                        }
+                        PickupKind.GEM -> {
+                            runCoins += value * 3
+                            rawScore += 35f * value
+                            sound.playCoin()
+                        }
+                        PickupKind.SHIELD -> {
+                            shieldFrames = (4f + if (skin == CatSkin.STEALTH) 1f else 0f) * 60f
+                            sound.playShield()
+                        }
+                        PickupKind.MAGNET -> {
+                            magnetFrames = 360f
+                            sound.playShield()
+                        }
+                    }
+                }
+
+                if (pk.collected || pk.x < -60f) pkIter.remove()
+            }
+
+            if (shieldFrames > 0f) shieldFrames = (shieldFrames - 1f).coerceAtLeast(0f)
+            if (magnetFrames > 0f) magnetFrames = (magnetFrames - 1f).coerceAtLeast(0f)
+            rawScore += 0.22f
+            speed = 6.2f + (rawScore / 260f).toInt() * 0.4f
+
+            score = rawScore.toInt()
+            shieldSec = (shieldFrames / 60f).toInt()
+            magnetSec = (magnetFrames / 60f).toInt()
         }
-      }
+    }
 
-      function burst(x, y, color, count) {
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count;
-          const sp = 1.8 + Math.random() * 3;
-          sim.particles.push({
-            x, y, vx: Math.cos(a) * sp, vy: Math.si
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { canvasSize = it }
+            .pointerInput(progress.flapPower) {
+                detectTapGestures {
+                    velocity = -10.5f - (progress.flapPower - 1) * 0.9f
+                    sound.playFlap()
+                }
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val playerX = w * 0.24f
+            val playerR = (w * 0.042f).coerceIn(22f, 38f)
+
+            drawRect(Color(0xFF070D19), size = size)
+
+            stars.forEach { st ->
+                drawCircle(Color(0xFFE2E8F0).copy(alpha = 0.45f), radius = st.r, center = Offset(st.x, st.y))
+            }
+
+            drawRect(Color(0xFF1E293B), topLeft = Offset(0f, h - 18f), size = Size(w, 18f))
+            drawRect(Color(0xFF0EA5E9), topLeft = Offset(0f, h - 18f), size = Size(w, 3f))
+
+            obstacles.forEach { obs ->
+                val border = when (obs.kind) {
+                    ObstacleKind.PULSING -> Color(0xFFF59E0B)
+                    ObstacleKind.DRONE -> Color(0xFFF43F5E)
+                    else -> Color(0xFF38BDF8)
+                }
+                val fill = when (obs.kind) {
+                    ObstacleKind.PULSING -> Color(0xFF2B221B)
+                    ObstacleKind.DRONE -> Color(0xFF2A1822)
+                    else -> Color(0xFF1E293B)
+                }
+                if (obs.gapY > 0f) {
+                    drawRect(fill, topLeft = Offset(obs.x, 0f), size = Size(obs.width, obs.gapY))
+                    drawRect(border, topLeft = Offset(obs.x, 0f), size = Size(obs.width, obs.gapY), style = Stroke(3f))
+                }
+                val botY = obs.gapY + obs.gapSize
+                val botH = h - 18f - botY
+                if (botH > 0f) {
+                    drawRect(fill, topLeft = Offset(obs.x, botY), size = Size(obs.width, botH))
+                    drawRect(border, topLeft = Offset(obs.x, botY), size = Size(obs.width, botH), style = Stroke(3f))
+                }
+                if (obs.kind == ObstacleKind.DRONE) {
+                    drawCircle(Color(0xFFF43F5E), radius = 18f, center = Offset(obs.x + obs.width * 0.5f, obs.droneY))
+                    drawCircle(Color(0xFFFFE4E6), radius = 18f, center = Offset(obs.x + obs.width * 0.5f, obs.droneY), style = Stroke(3f))
+                }
+            }
+
+            pickups.forEach { pk ->
+                val py = pk.y + sin(pk.phase) * 8f
+                val color = when (pk.kind) {
+                    PickupKind.COIN -> Color(0xFFF59E0B)
+                    PickupKind.GEM -> Color(0xFF38BDF8)
+                    PickupKind.SHIELD -> Color(0xFF38BDF8)
+                    PickupKind.MAGNET -> Color(0xFFF59E0B)
+                }
+                drawCircle(color, radius = 16f, center = Offset(pk.x, py))
+                drawCircle(Color.White.copy(alpha = 0.7f), radius = 16f, center = Offset(pk.x, py), style = Stroke(2.5f))
+            }
+
+            // Cyber Cat
+            val ears = Path().apply {
+                moveTo(playerX - playerR * 0.6f, playerY - playerR * 0.5f)
+                lineTo(playerX - playerR * 0.5f, playerY - playerR * 1.25f)
+                lineTo(playerX - playerR * 0.05f, playerY - playerR * 0.85f)
+                close()
+                moveTo(playerX + playerR * 0.1f, playerY - playerR * 0.85f)
+                lineTo(playerX + playerR * 0.55f, playerY - playerR * 1.25f)
+                lineTo(playerX + playerR * 0.65f, playerY - playerR * 0.5f)
+                close()
+            }
+            drawPath(ears, color = skin.bodyColor)
+            drawCircle(skin.bodyColor, radius = playerR, center = Offset(playerX, playerY))
+            drawCircle(skin.accentColor, radius = playerR, center = Offset(playerX, playerY), style = Stroke(3f))
+            drawRect(
+                Color(0xFF0F172A),
+                topLeft = Offset(playerX - playerR * 0.1f, playerY - playerR * 0.4f),
+                size = Size(playerR * 0.9f, playerR * 0.55f)
+            )
+
+            if (shieldFrames > 0f) {
+                drawCircle(
+                    Color(0xFF38BDF8),
+                    radius = playerR * 1.45f,
+                    center = Offset(playerX, playerY),
+                    style = Stroke(4f)
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .align(Alignment.TopCenter),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Score: $score  |  +$runCoins", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(
+                buildString {
+                    if (shieldSec > 0) append("Shield: ${shieldSec}s  ")
+                    if (magnetSec > 0) append("Magnet: ${magnetSec}s")
+                },
+                color = Color(0xFF38BDF8),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp
+            )
+        }
+    }
+}
