@@ -1,1 +1,374 @@
 
+package com.example.cybercatflyer
+
+import android.app.Activity
+import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.google.android.gms.ads.*
+import com.google.android.gms.ads.rewarded.RewardedAd
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.sin
+import kotlin.random.Random
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        MobileAds.initialize(this) {}
+        setContent { CyberCatFlyerApp() }
+    }
+}
+
+enum class CatSkin(val title: String, val price: Int, val color: Color) {
+    ASTRO("Astro Cat", 0, Color(0xFF0EA5E9)),
+    SOLAR("Solar Tabby", 150, Color(0xFFF59E0B)),
+    STEALTH("Phantom Stealth", 350, Color(0xFF10B981)),
+    MECHA("Mecha Neko-09", 600, Color(0xFFF43F5E)),
+    LYNX("Void Lynx", 1000, Color(0xFF818CF8))
+}
+
+data class Obstacle(
+    var x: Float,
+    var gapY: Float,
+    var gapSize: Float,
+    var type: Int = 0, // 0=static, 1=oscillating, 2=pulsing, 3=drone
+    var phase: Float = 0f
+)
+
+data class CoinItem(var x: Float, var y: Float, var collected: Boolean = false, var isGem: Boolean = false)
+
+@Composable
+fun CyberCatFlyerApp() {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val prefs = remember { context.getSharedPreferences("cybercat", Context.MODE_PRIVATE) }
+    val tone = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 65) }
+
+    var screen by remember { mutableStateOf("menu") }
+    var coins by remember { mutableStateOf(prefs.getInt("coins", 0)) }
+    var highScore by remember { mutableStateOf(prefs.getInt("highscore", 0)) }
+    var lastScore by remember { mutableStateOf(0) }
+    var lastEarned by remember { mutableStateOf(0) }
+    var flapPower by remember { mutableStateOf(prefs.getInt("flap", 1)) }
+    var gravityRed by remember { mutableStateOf(prefs.getInt("gravity", 0)) }
+    var coinValue by remember { mutableStateOf(prefs.getInt("coinval", 1)) }
+    var idleDrones by remember { mutableStateOf(prefs.getInt("idledrones", 0)) }
+    var equippedSkin by remember { mutableStateOf(CatSkin.valueOf(prefs.getString("skin", "ASTRO") ?: "ASTRO")) }
+    var unlockedSkins by remember { mutableStateOf(prefs.getStringSet("unlocked", setOf("ASTRO")) ?: setOf("ASTRO")) }
+    var rewardedAd by remember { mutableStateOf<RewardedAd?>(null) }
+
+    fun loadRewardedAd() {
+        val request = AdRequest.Builder().build()
+        RewardedAd.load(
+            context,
+            "ca-app-pub-3940256099942544/5224354917", // Test Rewarded Ad Unit
+            request,
+            object : RewardedAdLoadCallback() {
+                override fun onAdLoaded(ad: RewardedAd) { rewardedAd = ad }
+                override fun onAdFailedToLoad(err: LoadAdError) { rewardedAd = null }
+            }
+        )
+    }
+
+    fun save() {
+        prefs.edit().apply {
+            putInt("coins", coins)
+            putInt("highscore", highScore)
+            putInt("flap", flapPower)
+            putInt("gravity", gravityRed)
+            putInt("coinval", coinValue)
+            putInt("idledrones", idleDrones)
+            putString("skin", equippedSkin.name)
+            putStringSet("unlocked", unlockedSkins)
+            putLong("lastSeen", System.currentTimeMillis())
+            apply()
+        }
+    }
+
+    // Offline + Online Idle Income Loop
+    LaunchedEffect(Unit) {
+        loadRewardedAd()
+        val lastSeen = prefs.getLong("lastSeen", System.currentTimeMillis())
+        val offlineSec = ((System.currentTimeMillis() - lastSeen) / 1000L).coerceIn(0, 7200)
+        if (offlineSec > 5 && idleDrones > 0) {
+            coins += (offlineSec * idleDrones).toInt()
+            save()
+        }
+        while (true) {
+            delay(1000)
+            if (idleDrones > 0) {
+                coins += idleDrones
+                save()
+            }
+        }
+    }
+
+    fun showRewardedBonus(amount: Int) {
+        if (activity != null && rewardedAd != null) {
+            rewardedAd?.show(activity) {
+                coins += amount
+                save()
+                loadRewardedAd()
+            }
+        }
+    }
+
+    MaterialTheme(colorScheme = darkColorScheme()) {
+        Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0B1120)) {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f)) {
+                    when (screen) {
+                        "menu" -> Column(
+                            Modifier.fillMaxSize().padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text("CYBER CAT FLYER", fontSize = 34.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(16.dp))
+                            Text("High Score: $highScore  |  Coins: $coins", color = Color.White)
+                            Text("Idle Income: $idleDrones / sec  |  Skin: ${equippedSkin.title}", color = Color(0xFFF59E0B))
+                            Spacer(Modifier.height(32.dp))
+                            Button(onClick = { screen = "game" }, Modifier.fillMaxWidth(0.75f)) { Text("PLAY") }
+                            Spacer(Modifier.height(12.dp))
+                            Button(onClick = { screen = "shop" }, Modifier.fillMaxWidth(0.75f)) { Text("SHOP & IDLE") }
+                        }
+                        "game" -> GameScreen(
+                            flapPower, gravityRed, coinValue, equippedSkin.color, tone,
+                            onGameOver = { score, earned ->
+                                lastScore = score
+                                lastEarned = earned
+                                if (score > highScore) highScore = score
+                                coins += earned
+                                save()
+                                screen = "gameover"
+                            }
+                        )
+                        "shop" -> Column(
+                            Modifier.fillMaxSize().padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("HANGAR & UPGRADES", fontSize = 26.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                            Text("Coins: $coins", color = Color(0xFFF59E0B), fontSize = 20.sp)
+                            Spacer(Modifier.height(16.dp))
+                            Button(onClick = { val c = 50 * flapPower; if (coins >= c) { coins -= c; flapPower++; save() } }, Modifier.fillMaxWidth()) {
+                                Text("Flap Power Lv.$flapPower (${50 * flapPower})")
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { val c = 80 * (gravityRed + 1); if (coins >= c && gravityRed < 7) { coins -= c; gravityRed++; save() } }, Modifier.fillMaxWidth()) {
+                                Text("Low Gravity Lv.$gravityRed (${80 * (gravityRed + 1)})")
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { val c = 100 * coinValue; if (coins >= c) { coins -= c; coinValue++; save() } }, Modifier.fillMaxWidth()) {
+                                Text("Coin Value Lv.$coinValue (${100 * coinValue})")
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { val c = 40 + idleDrones * 35; if (coins >= c) { coins -= c; idleDrones++; save() } }, Modifier.fillMaxWidth()) {
+                                Text("Idle Drone ($idleDrones/sec) — Cost ${40 + idleDrones * 35}")
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            CatSkin.entries.forEach { skin ->
+                                val owned = unlockedSkins.contains(skin.name)
+                                Button(onClick = {
+                                    if (owned) { equippedSkin = skin; save() }
+                                    else if (coins >= skin.price) {
+                                        coins -= skin.price
+                                        unlockedSkins = unlockedSkins + skin.name
+                                        equippedSkin = skin
+                                        save()
+                                    }
+                                }, Modifier.fillMaxWidth()) {
+                                    Text(if (equippedSkin == skin) "${skin.title} [EQUIPPED]" else if (owned) "${skin.title} [EQUIP]" else "${skin.title} (${skin.price})")
+                                }
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedButton(onClick = { showRewardedBonus(150) }, enabled = rewardedAd != null) {
+                                Text("Watch Ad (+150 Coins)")
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Button(onClick = { screen = "menu" }) { Text("BACK") }
+                        }
+                        "gameover" -> Column(
+                            Modifier.fillMaxSize().padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text("GAME OVER", fontSize = 36.sp, color = Color(0xFFF43F5E), fontWeight = FontWeight.Bold)
+                            Text("Score: $lastScore  |  Earned: +$lastEarned", color = Color.White, fontSize = 20.sp)
+                            Spacer(Modifier.height(24.dp))
+                            Button(onClick = { screen = "game" }) { Text("RESTART") }
+                            Spacer(Modifier.height(10.dp))
+                            OutlinedButton(onClick = { showRewardedBonus(lastEarned.coerceAtLeast(50)) }, enabled = rewardedAd != null) {
+                                Text("2x Bonus via Ad")
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Button(onClick = { screen = "menu" }) { Text("MENU") }
+                        }
+                    }
+                }
+                // AdMob Banner at bottom
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth(),
+                    factory = { ctx ->
+                        AdView(ctx).apply {
+                            setAdSize(AdSize.BANNER)
+                            adUnitId = "ca-app-pub-3940256099942544/6300978111" // Test Banner Ad Unit
+                            loadAd(AdRequest.Builder().build())
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GameScreen(
+    flapPower: Int,
+    gravityRed: Int,
+    coinValue: Int,
+    catColor: Color,
+    tone: ToneGenerator,
+    onGameOver: (Int, Int) -> Unit
+) {
+    var playerY by remember { mutableStateOf(400f) }
+    var velocity by remember { mutableStateOf(0f) }
+    var score by remember { mutableStateOf(0) }
+    var earnedCoins by remember { mutableStateOf(0) }
+    var isPlaying by remember { mutableStateOf(true) }
+    val obstacles = remember { mutableStateListOf<Obstacle>() }
+    val coinsList = remember { mutableStateListOf<CoinItem>() }
+    var shield by remember { mutableStateOf(false) }
+    var shieldTime by remember { mutableStateOf(0) }
+    var gameSpeed by remember { mutableStateOf(5f) }
+    var frame by remember { mutableStateOf(0) }
+    val gravity = (0.6f - gravityRed * 0.05f).coerceAtLeast(0.22f)
+    val flapStrength = -12f - flapPower * 1.5f
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            delay(16)
+            frame++
+            velocity += gravity
+            playerY += velocity
+            if (playerY < 0f) playerY = 0f
+            if (playerY > 1600f) {
+                tone.startTone(ToneGenerator.TONE_SUP_ERROR, 250)
+                isPlaying = false
+                onGameOver(score, earnedCoins)
+            }
+
+            obstacles.forEach { it.x -= gameSpeed }
+            coinsList.forEach { it.x -= gameSpeed }
+            obstacles.removeAll { it.x < -120f }
+            coinsList.removeAll { it.x < -60f || it.collected }
+
+            if (frame % 115 == 0) {
+                val gapY = Random.nextFloat() * 750f + 220f
+                val gapSize = 260f - (score / 100f).coerceAtMost(100f)
+                obstacles.add(Obstacle(1100f, gapY, gapSize, Random.nextInt(4), Random.nextFloat() * 6.28f))
+            }
+            if (frame % 55 == 0 && Random.nextFloat() > 0.5f) {
+                coinsList.add(CoinItem(1100f, Random.nextFloat() * 1150f + 120f, isGem = Random.nextFloat() > 0.85f))
+            }
+
+            obstacles.forEach { obs ->
+                when (obs.type) {
+                    1 -> obs.gapY += sin(frame * 0.05f + obs.phase) * 2.2f
+                    2 -> obs.gapSize = (obs.gapSize + sin(frame * 0.08f + obs.phase) * 1.4f).coerceIn(130f, 300f)
+                    3 -> obs.gapY += sin(frame * 0.1f + obs.phase) * 3.5f
+                }
+            }
+
+            val playerX = 200f
+            val playerSize = 40f
+            obstacles.forEach { obs ->
+                if (obs.x < playerX + playerSize && obs.x + 80f > playerX) {
+                    val topHit = playerY < obs.gapY
+                    val bottomHit = playerY + playerSize > obs.gapY + obs.gapSize
+                    if (topHit || bottomHit) {
+                        if (shield) {
+                            shield = false
+                            obs.x = -200f
+                            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
+                        } else {
+                            tone.startTone(ToneGenerator.TONE_SUP_ERROR, 250)
+                            isPlaying = false
+                            onGameOver(score, earnedCoins)
+                        }
+                    }
+                }
+            }
+
+            coinsList.forEach { coin ->
+                if (!coin.collected && abs(coin.x - playerX) < 50f && abs(coin.y - playerY) < 50f) {
+                    coin.collected = true
+                    val mult = if (coin.isGem) 3 else 1
+                    earnedCoins += coinValue * mult
+                    score += 10 * coinValue * mult
+                    tone.startTone(ToneGenerator.TONE_PROP_ACK, 70)
+                }
+            }
+
+            score++
+            if (score % 500 == 0) gameSpeed += 0.3f
+            if (shield) { shieldTime--; if (shieldTime <= 0) shield = false }
+            if (frame % 500 == 0 && Random.nextFloat() > 0.65f) { shield = true; shieldTime = 200 }
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B1120)).clickable {
+        if (isPlaying) {
+            velocity = flapStrength
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP, 45)
+        }
+    }) {
+        Canvas(Modifier.fillMaxSize()) {
+            for (i in 0..24) {
+                drawCircle(Color.White.copy(alpha = 0.4f), 2f, Offset(((i * 55 + frame * 2) % 1100).toFloat(), (i * 83 % 1600).toFloat()))
+            }
+            obstacles.forEach { obs ->
+                val obsColor = when (obs.type) {
+                    1 -> Color(0xFF38BDF8)
+                    2 -> Color(0xFFF59E0B)
+                    3 -> Color(0xFFF43F5E)
+                    else -> Color(0xFF22D3EE)
+                }
+                drawRect(obsColor, Offset(obs.x, 0f), Size(80f, obs.gapY))
+                drawRect(obsColor, Offset(obs.x, obs.gapY + obs.gapSize), Size(80f, 1600f - obs.gapY - obs.gapSize))
+            }
+            coinsList.filter { !it.collected }.forEach {
+                drawCircle(if (it.isGem) Color(0xFF38BDF8) else Color(0xFFFBBF24), if (it.isGem) 18f else 14f, Offset(it.x, it.y))
+            }
+            drawCircle(if (shield) Color(0xFFA855F7) else catColor, 26f, Offset(200f, playerY))
+            drawCircle(catColor, 8f, Offset(184f, playerY - 18f))
+            drawCircle(catColor, 8f, Offset(216f, playerY - 18f))
+        }
+        Column(Modifier.padding(16.dp)) {
+            Text("Score: $score", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Coins: $earnedCoins", color = Color(0xFFFBBF24), fontSize = 18.sp)
+            if (shield) Text("SHIELD ACTIVE", color = Color(0xFFA855F7), fontSize = 16.sp)
+        }
+    }
+}
